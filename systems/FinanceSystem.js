@@ -130,6 +130,10 @@ const takeLoan = (entities, loanDetails) => {
   // Reset EMI timer
   finance.emiDueTimer = 0;
   
+  // This line ensures the Balance component is rerendered with new value
+  const Balance = require('../components/Balance').default;
+  balance.renderer = <Balance value={gameState.balance} />;
+  
   return entities;
 };
 

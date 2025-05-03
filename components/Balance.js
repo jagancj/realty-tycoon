@@ -1,19 +1,12 @@
-
-// File: components/Balance.js
-// Description: Component to display player's balance
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 export default function Balance(props) {
-  const [balance, setBalance] = useState(props.value || 0);
+  // For debugging purposes
+  console.log("Balance component rendering with value:", props.value);
   
-  // Update local state when props change
-  useEffect(() => {
-    setBalance(props.value || 0);
-  }, [props.value]);
-  
-  // Format the balance value with commas
-  const formattedBalance = balance.toLocaleString();
+  const value = props.value || 0;
+  const formattedBalance = value.toLocaleString();
   
   return (
     <View style={styles.balanceContainer}>
@@ -33,6 +26,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderWidth: 3,
     borderColor: '#3a9e51',
+    zIndex: 1000, // Add high zIndex to ensure it's visible
   },
   balanceText: {
     color: 'white',

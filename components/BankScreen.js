@@ -55,11 +55,11 @@ const ActiveLoan = ({ loan, onPayEMI, onPreClose }) => {
     <View style={styles.activeLoanContainer}>
       <View style={styles.activeLoanHeader}>
         <Text style={styles.activeLoanTitle}>Active Loan from {loan.bankName}</Text>
-        <Text style={styles.activeLoanAmount}>${loan.remainingAmount.toLocaleString()}</Text>
+        <Text style={styles.activeLoanAmount}>${loan?.remainingAmount?.toLocaleString()}</Text>
       </View>
       
       <View style={styles.activeLoanDetails}>
-        <Text style={styles.activeLoanDetail}>EMI: ${loan.emiAmount.toLocaleString()}/month</Text>
+        <Text style={styles.activeLoanDetail}>EMI: ${loan?.emiAmount?.toLocaleString()}/month</Text>
         <Text style={styles.activeLoanDetail}>Remaining: {loan.remainingMonths} months</Text>
         <Text style={styles.activeLoanDetail}>Interest: {loan.interestRate}%</Text>
       </View>
@@ -76,7 +76,7 @@ const ActiveLoan = ({ loan, onPayEMI, onPreClose }) => {
           style={[styles.loanActionButton, styles.preCloseButton]}
           onPress={onPreClose}
         >
-          <Text style={styles.buttonText}>Pre-close (${loan.preCloseAmount.toLocaleString()})</Text>
+          <Text style={styles.buttonText}>Pre-close (${loan?.preCloseAmount?.toLocaleString()})</Text>
         </TouchableOpacity>
       </View>
     </View>

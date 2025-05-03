@@ -174,5 +174,26 @@ const PropertyTimer = (entities, { time, touches, dispatch }) => {
   
   return entities;
 };
+const BalanceUpdateSystem = (entities, { events, dispatch }) => {
+  if (!events) return entities;
+  
+  events.forEach(event => {
+    if (event.type === 'balance-update' && entities.balance) {
+      console.log("BalanceUpdateSystem received update:", event.balance);
+      
+      // Update the balance value
+      entities.balance.value = event.balance;
+      
+      // Update the renderer component
+      const Balance = require('../components/Balance').default;
+      entities.balance.renderer = <Balance value={event.balance} />;
+      
+      // Log the updated entity
+      console.log("Updated balance entity:", entities.balance);
+    }
+  });
+  
+  return entities;
+};
 
-export { UpdateBalance, ProcessOffers, PropertyTimer };
+export { UpdateBalance, ProcessOffers, PropertyTimer, BalanceUpdateSystem };

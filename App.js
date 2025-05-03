@@ -5,7 +5,7 @@ import { GameEngine } from 'react-native-game-engine';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 
 // Game systems
-import { UpdateBalance, ProcessOffers, PropertyTimer } from './systems';
+import { UpdateBalance, ProcessOffers, PropertyTimer, BalanceUpdateSystem } from './systems';
 import { FinanceSystem, takeLoan, payEMI, preCloseLoan } from './systems/FinanceSystem';
 import { PropertySystem, PropertyEventHandler } from './systems/PropertySystem';
 import { calculateEMI } from './utils/loanCalculator';
@@ -140,6 +140,7 @@ export default function App() {
   // Handle game events
   const onEvent = (e) => {
     if (e.type === 'balance-update') {
+      console.log("Received balance update event:", e.balance);
       setGameState(prevState => ({
         ...prevState,
         balance: e.balance
@@ -147,7 +148,11 @@ export default function App() {
       
       // Also update the entities directly
       if (gameEngineRef.current && gameEngineRef.current.entities && gameEngineRef.current.entities.balance) {
+        console.log("Updating balance entity directly in onEvent");
         gameEngineRef.current.entities.balance.value = e.balance;
+        
+        const Balance = require('./components/Balance').default;
+        gameEngineRef.current.entities.balance.renderer = <Balance value={e.balance} />;
       }
     } else if (e.type === 'level-up') {
       setGameState(prevState => ({
@@ -194,192 +199,142 @@ export default function App() {
   };
 
   // Handle loan selection
-  const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
-    // Input validation
-    if (!bankId || typeof bankId !== 'string') {
-      console.error('Invalid bank ID provided:', bankId);
-      return;
+// Handle loan selection
+const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
+  // Input validation
+  if (!bankId || typeof bankId !== 'string') {
+    console.error('Invalid bank ID provided:', bankId);
+    return;
+  }
+
+  if (loanOptionIndex === undefined || loanOptionIndex < 0) {
+    console.error('Invalid loan option index:', loanOptionIndex);
+    return;
+  }
+
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    console.error('Invalid loan amount:', amount);
+    return;
+  }
+
+  if (!interestRate || isNaN(Number(interestRate)) || Number(interestRate) < 0) {
+    console.error('Invalid interest rate:', interestRate);
+    return;
+  }
+
+  // Check if user already has an active loan
+  if (activeLoan) {
+    console.warn('User already has an active loan. Cannot take another loan.');
+    alert('You already have an active loan. Please pay it off before taking a new one.');
+    return;
+  }
+
+  // Find the bank and validate it exists
+  const selectedBank = availableBanks.find(bank => bank.id === bankId);
+  if (!selectedBank) {
+    console.error(`Bank with ID ${bankId} not found`);
+    return;
+  }
+
+  // Find the loan option and validate it exists
+  if (!selectedBank.loanOptions || !Array.isArray(selectedBank.loanOptions)) {
+    console.error(`Bank ${bankId} does not have valid loan options`);
+    return;
+  }
+
+  const loanOption = selectedBank.loanOptions[loanOptionIndex];
+  if (!loanOption) {
+    console.error(`Loan option index ${loanOptionIndex} not found for bank ${bankId}`);
+    return;
+  }
+
+  // Validate loan option has required properties
+  if (!loanOption.duration || loanOption.duration <= 0) {
+    console.error('Invalid loan duration:', loanOption.duration);
+    return;
+  }
+
+  // Convert values to appropriate types
+  const numericAmount = Number(amount);
+  const numericInterestRate = Number(interestRate);
+  const loanDuration = Number(loanOption.duration);
+
+  // Try to calculate EMI, with error handling
+  let emiAmount;
+  try {
+    emiAmount = calculateEMI(numericAmount, numericInterestRate, loanDuration);
+    if (isNaN(emiAmount) || emiAmount <= 0) {
+      throw new Error(`Invalid EMI calculated: ${emiAmount}`);
     }
+  } catch (error) {
+    console.error('Error calculating EMI:', error);
+    alert('There was a problem calculating your loan payments. Please try again.');
+    return;
+  }
 
-    if (loanOptionIndex === undefined || loanOptionIndex < 0) {
-      console.error('Invalid loan option index:', loanOptionIndex);
-      return;
-    }
-
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      console.error('Invalid loan amount:', amount);
-      return;
-    }
-
-    if (!interestRate || isNaN(Number(interestRate)) || Number(interestRate) < 0) {
-      console.error('Invalid interest rate:', interestRate);
-      return;
-    }
-
-    // Check if user already has an active loan
-    if (activeLoan) {
-      console.warn('User already has an active loan. Cannot take another loan.');
-      alert('You already have an active loan. Please pay it off before taking a new one.');
-      return;
-    }
-
-    // Find the bank and validate it exists
-    const selectedBank = availableBanks.find(bank => bank.id === bankId);
-    if (!selectedBank) {
-      console.error(`Bank with ID ${bankId} not found`);
-      return;
-    }
-
-    // Find the loan option and validate it exists
-    if (!selectedBank.loanOptions || !Array.isArray(selectedBank.loanOptions)) {
-      console.error(`Bank ${bankId} does not have valid loan options`);
-      return;
-    }
-
-    const loanOption = selectedBank.loanOptions[loanOptionIndex];
-    if (!loanOption) {
-      console.error(`Loan option index ${loanOptionIndex} not found for bank ${bankId}`);
-      return;
-    }
-
-    // Validate loan option has required properties
-    if (!loanOption.duration || loanOption.duration <= 0) {
-      console.error('Invalid loan duration:', loanOption.duration);
-      return;
-    }
-
-    // Convert values to appropriate types
-    const numericAmount = Number(amount);
-    const numericInterestRate = Number(interestRate);
-    const loanDuration = Number(loanOption.duration);
-
-    // Try to calculate EMI, with error handling
-    let emiAmount;
-    try {
-      emiAmount = calculateEMI(numericAmount, numericInterestRate, loanDuration);
-      if (isNaN(emiAmount) || emiAmount <= 0) {
-        throw new Error(`Invalid EMI calculated: ${emiAmount}`);
-      }
-    } catch (error) {
-      console.error('Error calculating EMI:', error);
-      alert('There was a problem calculating your loan payments. Please try again.');
-      return;
-    }
-
-    // Create the loan object
-    const newLoan = {
-      bankId,
-      bankName: selectedBank.name,
-      originalAmount: numericAmount,
-      remainingAmount: numericAmount,
-      interestRate: numericInterestRate,
-      duration: loanDuration,
-      remainingMonths: loanDuration,
-      emiAmount,
-      preCloseAmount: numericAmount, // Could implement a pre-closure penalty
-      startDate: Date.now()
-    };
-
-    // Calculate new balance
-    const newBalance = gameState.balance + numericAmount;
-
-    // Update React state first - for UI updates
-    try {
-      setActiveLoan(newLoan);
-      setGameState(prev => ({
-        ...prev,
-        balance: newBalance
-      }));
-    } catch (stateError) {
-      console.error('Error updating React state:', stateError);
-      alert('An error occurred. Please try again.');
-      return;
-    }
-
-    // Update game engine entities - with extensive error handling
-    try {
-      // Check if game engine reference exists
-      if (!gameEngineRef || !gameEngineRef.current) {
-        throw new Error('Game engine reference is not available');
-      }
-
-      // Check if entities object exists
-      const entities = gameEngineRef.current.entities;
-      if (!entities) {
-        throw new Error('Game engine entities not found');
-      }
-
-      // Update finance entity
-      if (!entities.finance) {
-        console.warn('Finance entity not found, creating it');
-        entities.finance = {
-          banks: availableBanks,
-          activeLoan: newLoan,
-          emiDueTimer: 0,
-          emiInterval: 30000,
-          loanHistory: []
-        };
-      } else {
-        entities.finance.activeLoan = newLoan;
-        
-        // Reset EMI timer if it exists
-        if ('emiDueTimer' in entities.finance) {
-          entities.finance.emiDueTimer = 0;
-        }
-        
-        // Add to loan history if array exists
-        if (Array.isArray(entities.finance.loanHistory)) {
-          entities.finance.loanHistory.push({
-            bankId,
-            amount: numericAmount,
-            interestRate: numericInterestRate,
-            dateTaken: new Date().toISOString()
-          });
-        }
-      }
-
-      // Update gameState entity
-      if (!entities.gameState) {
-        console.warn('GameState entity not found, updates may not be properly reflected');
-      } else {
-        entities.gameState.balance = newBalance;
-      }
-
-      // Update balance entity
-      if (!entities.balance) {
-        console.warn('Balance entity not found, display may not update correctly');
-      } else {
-        entities.balance.value = newBalance;
-        
-        // If balance has a renderer with props
-        if (entities.balance.renderer && entities.balance.renderer.props) {
-          entities.balance.renderer = <Balance value={newBalance} />;
-        }
-      }
-
-      // Try to force a refresh of entities if method exists
-      if (typeof gameEngineRef.current.setEntities === 'function') {
-        gameEngineRef.current.setEntities({...entities});
-      }
-
-    } catch (engineError) {
-      console.error('Error updating game engine:', engineError);
-      // Continue with UI updates since React state was already updated
-      console.warn('Continuing with UI updates only. Game engine updates failed.');
-    }
-
-    // Close the finance screen regardless of engine updates
-    // since React state has been updated
-    setShowFinance(false);
-    
-    // Log success message
-    console.log(`Loan taken successfully: ${numericAmount} from ${selectedBank.name} at ${numericInterestRate}% for ${loanDuration} months.`);
-    
-    // Optionally show a success message to the user
-    setTimeout(() => {
-      alert(`Loan of $${numericAmount.toLocaleString()} approved!`);
-    }, 500);
+  // Create the loan object
+  const newLoan = {
+    bankId,
+    bankName: selectedBank.name,
+    originalAmount: numericAmount,
+    remainingAmount: numericAmount,
+    interestRate: numericInterestRate,
+    duration: loanDuration,
+    remainingMonths: loanDuration,
+    emiAmount,
+    preCloseAmount: numericAmount,
+    startDate: Date.now()
   };
+
+  // Calculate new balance
+  const newBalance = gameState.balance + numericAmount;
+
+  // Update React state first - for UI updates
+  setActiveLoan(newLoan);
+  setGameState(prev => ({
+    ...prev,
+    balance: newBalance
+  }));
+
+  // Update game engine using the dispatch system instead of direct entity manipulation
+
+  if (gameEngineRef.current) {
+    gameEngineRef.current.dispatch({
+      type: 'balance-update',
+      balance: newBalance
+    });
+
+    // Also try to directly update the entity if possible
+    if (gameEngineRef.current.entities && gameEngineRef.current.entities.balance) {
+      const Balance = require('./components/Balance').default;
+      gameEngineRef.current.entities.balance.value = newBalance;
+      gameEngineRef.current.entities.balance.renderer = <Balance value={newBalance} />;
+      
+      console.log("Directly updated balance entity to:", newBalance);
+    }
+    gameEngineRef.current.dispatch({
+      type: 'take-loan',
+      bankId,
+      loanOptionIndex,
+      amount: numericAmount,
+      interestRate: numericInterestRate,
+      duration: loanDuration
+    });
+  } else {
+    console.warn('Game engine reference not available, UI state updated but game engine not updated');
+  }
+
+  // Close the finance screen
+  setShowFinance(false);
+  
+  // Log success message
+  console.log(`Loan taken successfully: ${numericAmount} from ${selectedBank.name} at ${numericInterestRate}% for ${loanDuration} months.`);
+  
+  // Show a success message to the user
+  setTimeout(() => {
+    alert(`Loan of $${numericAmount.toLocaleString()} approved!`);
+  }, 500);
+};
 
   // Handle pay EMI
   const handlePayEMI = () => {
@@ -492,7 +447,14 @@ export default function App() {
       
       // Sync the balance display with the current gameState
       if (entities.balance && gameState.balance !== entities.balance.value) {
+        // Update both the value and the renderer
         entities.balance.value = gameState.balance;
+        entities.balance.renderer = <Balance value={gameState.balance} />;
+        
+        // Force a refresh of the game engine
+        if (typeof gameEngineRef.current.setEntities === 'function') {
+          gameEngineRef.current.setEntities({...entities});
+        }
       }
     }
   }, [gameState.balance]);
@@ -658,24 +620,25 @@ export default function App() {
       <StatusBar hidden />
       
       <GameEngine
-        ref={gameEngineRef}
-        style={styles.gameContainer}
-        systems={[
-          UpdateBalance, 
-          ProcessOffers, 
-          PropertyTimer, 
-          FinanceSystem, 
-          PropertySystem, 
-          PropertyEventHandler,
-          dispatchHandler
-        ]}
-        entities={entities}
-        running={running}
-        onEvent={(e) => {
-          setGameEngine(gameEngineRef.current);
-          onEvent(e);
-        }}
-      />
+  ref={gameEngineRef}
+  style={styles.gameContainer}
+  systems={[
+    BalanceUpdateSystem, // Add this as the first system
+    UpdateBalance, 
+    ProcessOffers, 
+    PropertyTimer, 
+    FinanceSystem, 
+    PropertySystem, 
+    PropertyEventHandler,
+    dispatchHandler
+  ]}
+  entities={entities}
+  running={running}
+  onEvent={(e) => {
+    setGameEngine(gameEngineRef.current);
+    onEvent(e);
+  }}
+/>
       
       {/* Finance Screen Overlay */}
       {showFinance && (

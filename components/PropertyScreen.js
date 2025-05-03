@@ -1,7 +1,7 @@
 // File: components/PropertyScreen.js
 // Description: Main screen for the Property module
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import AvailableLands from './property/AvailableLands';
 import OwnedProperties from './property/OwnedProperties';
@@ -25,6 +25,10 @@ export default function PropertyScreen({
   onBuyLand, 
   onStartConstruction, 
   onSellProperty,
+  onModifyListing,
+  onRemoveListing,
+  onListUnitsBulk,
+  onListUnitsIndividually,
   onClose 
 }) {
   const [activeTab, setActiveTab] = useState(TABS.AVAILABLE);
@@ -47,6 +51,10 @@ export default function PropertyScreen({
               setActiveTab(TABS.CONSTRUCTION);
               // Optionally pre-select the property in construction tab
             }}
+            onSelectForSale={(propertyId) => {
+              setActiveTab(TABS.MARKET);
+              // Optionally pre-select the property for sale
+            }}
           />
         );
       case TABS.CONSTRUCTION:
@@ -61,8 +69,13 @@ export default function PropertyScreen({
       case TABS.MARKET:
         return (
           <PropertyMarket 
+            completedProperties={ownedProperties.filter(p => p.status === 'completed')}
             propertiesForSale={propertiesForSale}
             onSellProperty={onSellProperty}
+            onModifyListing={onModifyListing}
+            onRemoveListing={onRemoveListing}
+            onListUnitsBulk={onListUnitsBulk}
+            onListUnitsIndividually={onListUnitsIndividually}
           />
         );
       default:
@@ -113,9 +126,10 @@ export default function PropertyScreen({
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      {/* Replace ScrollView with a View container */}
+      <View style={styles.content}>
         {renderTabContent()}
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
