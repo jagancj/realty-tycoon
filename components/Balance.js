@@ -3,7 +3,6 @@ import { View, Text, StyleSheet } from 'react-native';
 
 export default function Balance(props) {
   // For debugging purposes
-  console.log("Balance component rendering with value:", props.value);
   
   const value = props.value || 0;
   const formattedBalance = value.toLocaleString();

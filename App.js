@@ -26,6 +26,7 @@ export default function App() {
   const [running, setRunning] = useState(true);
   const [showFinance, setShowFinance] = useState(false);
   const [showProperties, setShowProperties] = useState(false);
+  const [activeNavItem, setActiveNavItem] = useState('home');
   const [gameState, setGameState] = useState({
     balance: 0,
     level: 1,
@@ -655,58 +656,111 @@ const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
 
       {/* Property Screen Overlay */}
       {showProperties && (
-        <PropertyScreen
-          gameState={gameState}
-          availableLands={propertyState.availableLands}
-          ownedProperties={propertyState.ownedProperties}
-          constructionProjects={propertyState.constructionProjects}
-          propertiesForSale={propertyState.propertiesForSale}
-          onBuyLand={handleBuyLand}
-          onStartConstruction={handleStartConstruction}
-          onSellProperty={handleSellProperty}
-          onModifyListing={handleModifyListing}
-          onRemoveListing={handleRemoveListing}
-          onListUnitsBulk={handleListUnitsBulk}
-          onListUnitsIndividually={handleListUnitsIndividually}
-          onClose={() => setShowProperties(false)}
-        />
+        <View style={{
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f5f5f5',
+    zIndex: 100,
+  }}>
+    <PropertyScreen
+      gameState={gameState}
+      availableLands={propertyState.availableLands}
+      ownedProperties={propertyState.ownedProperties}
+      onBuyLand={handleBuyLand}
+      onClose={() => setShowProperties(false)}
+    />
+  </View>
       )}
       
       {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => setShowProperties(true)}
-        >
-          <Ionicons name="home-outline" size={24} color="#8c8c8c" />
-          <Text style={styles.navText}>Properties</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.navItem}>
-          <FontAwesome5 name="chart-bar" size={24} color="#8c8c8c" />
-          <Text style={styles.navText}>Market</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={[styles.navItem, styles.homeButton]}>
-          <View style={styles.homeButtonInner}>
-            <Ionicons name="home" size={24} color="white" />
-          </View>
-          <Text style={[styles.navText, {color: 'white'}]}>HOME</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => setShowFinance(true)}
-        >
-          <FontAwesome5 name="university" size={24} color="#8c8c8c" />
-          <Text style={styles.navText}>Finance</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.navItem}>
-          <FontAwesome5 name="user" size={24} color="#8c8c8c" />
-          <Text style={styles.navText}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+  <TouchableOpacity 
+    style={[styles.navItem, activeNavItem === 'properties' && styles.activeNavItem]}
+    onPress={() => {
+      setShowProperties(true);
+      setActiveNavItem('properties');
+    }}
+  >
+    <Ionicons 
+      name="home-outline" 
+      size={24} 
+      color={activeNavItem === 'properties' ? "#f0b042" : "#8c8c8c"} 
+    />
+    <Text style={[
+      styles.navText, 
+      activeNavItem === 'properties' && styles.activeNavText
+    ]}>Properties</Text>
+  </TouchableOpacity>
+  
+  <TouchableOpacity 
+    style={[styles.navItem, activeNavItem === 'market' && styles.activeNavItem]}
+    onPress={() => setActiveNavItem('market')}
+  >
+    <FontAwesome5 
+      name="chart-bar" 
+      size={24} 
+      color={activeNavItem === 'market' ? "#f0b042" : "#8c8c8c"} 
+    />
+    <Text style={[
+      styles.navText, 
+      activeNavItem === 'market' && styles.activeNavText
+    ]}>Market</Text>
+  </TouchableOpacity>
+  
+  <TouchableOpacity 
+    style={[styles.navItem, styles.homeButton, activeNavItem === 'home' && styles.activeHomeButton]}
+    onPress={() => {
+      setActiveNavItem('home');
+      // Close any open screens
+      setShowProperties(false);
+      setShowFinance(false);
+    }}
+  >
+    <View style={[
+      styles.homeButtonInner, 
+      activeNavItem === 'home' && styles.activeHomeButtonInner
+    ]}>
+      <Ionicons name="home" size={24} color="white" />
+    </View>
+    <Text style={[styles.navText, {color: 'white'}]}>HOME</Text>
+  </TouchableOpacity>
+  
+  <TouchableOpacity 
+    style={[styles.navItem, activeNavItem === 'finance' && styles.activeNavItem]}
+    onPress={() => {
+      setShowFinance(true);
+      setActiveNavItem('finance');
+    }}
+  >
+    <FontAwesome5 
+      name="university" 
+      size={24} 
+      color={activeNavItem === 'finance' ? "#f0b042" : "#8c8c8c"} 
+    />
+    <Text style={[
+      styles.navText, 
+      activeNavItem === 'finance' && styles.activeNavText
+    ]}>Finance</Text>
+  </TouchableOpacity>
+  
+  <TouchableOpacity 
+    style={[styles.navItem, activeNavItem === 'profile' && styles.activeNavItem]}
+    onPress={() => setActiveNavItem('profile')}
+  >
+    <FontAwesome5 
+      name="user" 
+      size={24} 
+      color={activeNavItem === 'profile' ? "#f0b042" : "#8c8c8c"} 
+    />
+    <Text style={[
+      styles.navText, 
+      activeNavItem === 'profile' && styles.activeNavText
+    ]}>Profile</Text>
+  </TouchableOpacity>
+</View>
     </SafeAreaView>
   );
 }
@@ -748,4 +802,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  activeNavItem: {
+    // Optional: add styling for active nav items
+  },
+  activeNavText: {
+    color: '#f0b042',
+    fontWeight: 'bold',
+  },
+  activeHomeButton: {
+    // Optional: add styling for active home button
+  },
+  activeHomeButtonInner: {
+    backgroundColor: '#f5c676', // Lighter color to show it's active
+  }
 });
