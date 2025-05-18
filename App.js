@@ -1,14 +1,16 @@
-// App.js
+// App.js - Updated for improved finance system
+// This is a partial update to focus on the finance-related parts of App.js
+
 import React, { useState, useRef, useEffect } from 'react';
-import { StyleSheet, StatusBar, View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
+import { StyleSheet, StatusBar, View, Text, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
 import { GameEngine } from 'react-native-game-engine';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 
 // Game systems
 import { UpdateBalance, ProcessOffers, PropertyTimer, BalanceUpdateSystem } from './systems';
-import { FinanceSystem, takeLoan, payEMI, preCloseLoan } from './systems/FinanceSystem';
+import { FinanceSystem, takeLoan, payEMI, preCloseLoan, initializeBanks } from './systems/FinanceSystem';
 import { PropertySystem, PropertyEventHandler } from './systems/PropertySystem';
-import { calculateEMI } from './utils/loanCalculator';
+import { calculateEMI, calculateTotalInterest, generateAmortizationSchedule } from './utils/loanCalculator';
 import { generateRandomLands } from './utils/propertyGenerator';
 
 // Components
@@ -35,6 +37,8 @@ export default function App() {
   });
   const [activeLoan, setActiveLoan] = useState(null);
   const [banks, setBanks] = useState([]);
+  const [creditScore, setCreditScore] = useState(750); // Initialize credit score
+  const [loanHistory, setLoanHistory] = useState([]); // Track loan payment history
   const [propertyState, setPropertyState] = useState({
     availableLands: [],
     ownedProperties: [],
@@ -43,42 +47,11 @@ export default function App() {
     salesHistory: []
   });
 
-  // List of available banks
-  const availableBanks = [
-    {
-      id: 'bank1',
-      name: 'City Bank',
-      rating: 4,
-      baseLoanAmount: 100000,
-      loanOptions: [
-        { name: 'Quick Loan', baseInterestRate: 8.5, duration: 12 },
-        { name: 'Property Loan', baseInterestRate: 7.0, duration: 24 },
-        { name: 'Business Loan', baseInterestRate: 6.0, duration: 36 }
-      ]
-    },
-    {
-      id: 'bank2',
-      name: 'National Bank',
-      rating: 5,
-      baseLoanAmount: 150000,
-      loanOptions: [
-        { name: 'Starter Loan', baseInterestRate: 7.5, duration: 12 },
-        { name: 'Growth Loan', baseInterestRate: 6.5, duration: 24 },
-        { name: 'Enterprise Loan', baseInterestRate: 5.5, duration: 36 }
-      ]
-    },
-    {
-      id: 'bank3',
-      name: 'Investment Bank',
-      rating: 3,
-      baseLoanAmount: 80000,
-      loanOptions: [
-        { name: 'Micro Loan', baseInterestRate: 9.0, duration: 6 },
-        { name: 'Standard Loan', baseInterestRate: 8.0, duration: 12 },
-        { name: 'Premium Loan', baseInterestRate: 7.0, duration: 18 }
-      ]
-    }
-  ];
+  // Get dynamic bank information based on player level
+  useEffect(() => {
+    const dynamicBanks = initializeBanks(gameState.level);
+    setBanks(dynamicBanks);
+  }, [gameState.level]);
 
   // Initial property data
   const initialAvailableLands = generateRandomLands(10, gameState.level);
@@ -160,10 +133,20 @@ export default function App() {
         ...prevState,
         level: prevState.level + 1
       }));
+      
+      // Update available banks with the new level
+      const dynamicBanks = initializeBanks(gameState.level + 1);
+      setBanks(dynamicBanks);
     } else if (e.type === 'open-finance') {
       setShowFinance(true);
       setActiveLoan(e.currentLoan);
-      setBanks(e.banks);
+      setBanks(e.banks || initializeBanks(gameState.level));
+      setCreditScore(e.creditScore || 750);
+      
+      // Get loan history
+      if (gameEngineRef.current && gameEngineRef.current.entities && gameEngineRef.current.entities.finance) {
+        setLoanHistory(gameEngineRef.current.entities.finance.loanHistory || []);
+      }
     } else if (e.type === 'open-properties') {
       setShowProperties(true);
     } else if (e.type === 'emi-payment') {
@@ -175,12 +158,40 @@ export default function App() {
           setActiveLoan(prevLoan => ({
             ...prevLoan,
             remainingAmount: e.remainingLoan,
-            remainingMonths: e.remainingMonths
+            remainingMonths: e.remainingMonths,
+            totalInterestPaid: (prevLoan.totalInterestPaid || 0) + e.interestPaid
           }));
         }
+        
+        // Show notification to player about the payment
+        Alert.alert(
+          "EMI Payment Successful",
+          `Payment of $${e.amount.toLocaleString()} processed.\nPrincipal: $${Math.round(e.principalPaid).toLocaleString()}\nInterest: $${Math.round(e.interestPaid).toLocaleString()}`
+        );
+      } else {
+        // Payment failed
+        Alert.alert(
+          "Payment Failed",
+          `Insufficient funds to pay EMI of $${e.amount.toLocaleString()}.`
+        );
       }
     } else if (e.type === 'loan-completed') {
       setActiveLoan(null);
+      
+      // Update loan history
+      if (gameEngineRef.current && gameEngineRef.current.entities && gameEngineRef.current.entities.finance) {
+        setLoanHistory(gameEngineRef.current.entities.finance.loanHistory || []);
+      }
+      
+      Alert.alert(
+        "Loan Paid Off",
+        "Congratulations! Your loan has been fully paid off."
+      );
+    } else if (e.type === 'loan-penalty') {
+      Alert.alert(
+        "Loan Penalty",
+        `${e.message} A penalty of $${e.penalty.toLocaleString()} has been added to your loan.`
+      );
     } else if (e.type === 'property-update') {
       // Update React state with property entity data
       if (gameEngineRef.current && gameEngineRef.current.entities && gameEngineRef.current.entities.propertyState) {
@@ -199,162 +210,222 @@ export default function App() {
     }
   };
 
-  // Handle loan selection
-// Handle loan selection
-const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
-  // Input validation
-  if (!bankId || typeof bankId !== 'string') {
-    console.error('Invalid bank ID provided:', bankId);
-    return;
-  }
-
-  if (loanOptionIndex === undefined || loanOptionIndex < 0) {
-    console.error('Invalid loan option index:', loanOptionIndex);
-    return;
-  }
-
-  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-    console.error('Invalid loan amount:', amount);
-    return;
-  }
-
-  if (!interestRate || isNaN(Number(interestRate)) || Number(interestRate) < 0) {
-    console.error('Invalid interest rate:', interestRate);
-    return;
-  }
-
-  // Check if user already has an active loan
-  if (activeLoan) {
-    console.warn('User already has an active loan. Cannot take another loan.');
-    alert('You already have an active loan. Please pay it off before taking a new one.');
-    return;
-  }
-
-  // Find the bank and validate it exists
-  const selectedBank = availableBanks.find(bank => bank.id === bankId);
-  if (!selectedBank) {
-    console.error(`Bank with ID ${bankId} not found`);
-    return;
-  }
-
-  // Find the loan option and validate it exists
-  if (!selectedBank.loanOptions || !Array.isArray(selectedBank.loanOptions)) {
-    console.error(`Bank ${bankId} does not have valid loan options`);
-    return;
-  }
-
-  const loanOption = selectedBank.loanOptions[loanOptionIndex];
-  if (!loanOption) {
-    console.error(`Loan option index ${loanOptionIndex} not found for bank ${bankId}`);
-    return;
-  }
-
-  // Validate loan option has required properties
-  if (!loanOption.duration || loanOption.duration <= 0) {
-    console.error('Invalid loan duration:', loanOption.duration);
-    return;
-  }
-
-  // Convert values to appropriate types
-  const numericAmount = Number(amount);
-  const numericInterestRate = Number(interestRate);
-  const loanDuration = Number(loanOption.duration);
-
-  // Try to calculate EMI, with error handling
-  let emiAmount;
-  try {
-    emiAmount = calculateEMI(numericAmount, numericInterestRate, loanDuration);
-    if (isNaN(emiAmount) || emiAmount <= 0) {
-      throw new Error(`Invalid EMI calculated: ${emiAmount}`);
+  // Handle loan selection with improved error handling and user feedback
+  const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
+    // Input validation
+    if (!bankId || typeof bankId !== 'string') {
+      console.error('Invalid bank ID provided:', bankId);
+      return;
     }
-  } catch (error) {
-    console.error('Error calculating EMI:', error);
-    alert('There was a problem calculating your loan payments. Please try again.');
-    return;
-  }
 
-  // Create the loan object
-  const newLoan = {
-    bankId,
-    bankName: selectedBank.name,
-    originalAmount: numericAmount,
-    remainingAmount: numericAmount,
-    interestRate: numericInterestRate,
-    duration: loanDuration,
-    remainingMonths: loanDuration,
-    emiAmount,
-    preCloseAmount: numericAmount,
-    startDate: Date.now()
+    if (loanOptionIndex === undefined || loanOptionIndex < 0) {
+      console.error('Invalid loan option index:', loanOptionIndex);
+      return;
+    }
+
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      console.error('Invalid loan amount:', amount);
+      return;
+    }
+
+    if (!interestRate || isNaN(Number(interestRate)) || Number(interestRate) < 0) {
+      console.error('Invalid interest rate:', interestRate);
+      return;
+    }
+
+    // Check if user already has an active loan
+    if (activeLoan) {
+      console.warn('User already has an active loan. Cannot take another loan.');
+      Alert.alert(
+        "Loan Request Denied",
+        "You already have an active loan. Please pay it off before taking a new one."
+      );
+      return;
+    }
+
+    // Find the bank and validate it exists
+    const selectedBank = banks.find(bank => bank.id === bankId);
+    if (!selectedBank) {
+      console.error(`Bank with ID ${bankId} not found`);
+      return;
+    }
+
+    // Find the loan option and validate it exists
+    if (!selectedBank.loanOptions || !Array.isArray(selectedBank.loanOptions)) {
+      console.error(`Bank ${bankId} does not have valid loan options`);
+      return;
+    }
+
+    const loanOption = selectedBank.loanOptions[loanOptionIndex];
+    if (!loanOption) {
+      console.error(`Loan option index ${loanOptionIndex} not found for bank ${bankId}`);
+      return;
+    }
+
+    // Validate loan option has required properties
+    if (!loanOption.duration || loanOption.duration <= 0) {
+      console.error('Invalid loan duration:', loanOption.duration);
+      return;
+    }
+
+    // Convert values to appropriate types
+    const numericAmount = Number(amount);
+    const numericInterestRate = Number(interestRate);
+    const loanDuration = Number(loanOption.duration);
+
+    // Calculate EMI and generate amortization schedule
+    let emiAmount, schedule, totalInterest;
+    try {
+      emiAmount = calculateEMI(numericAmount, numericInterestRate, loanDuration);
+      if (isNaN(emiAmount) || emiAmount <= 0) {
+        throw new Error(`Invalid EMI calculated: ${emiAmount}`);
+      }
+      
+      // Generate the full payment schedule
+      schedule = generateAmortizationSchedule(numericAmount, numericInterestRate, loanDuration);
+      
+      // Calculate total interest
+      totalInterest = calculateTotalInterest(numericAmount, emiAmount, loanDuration);
+    } catch (error) {
+      console.error('Error calculating loan details:', error);
+      Alert.alert(
+        "Loan Calculation Error",
+        "There was a problem calculating your loan payments. Please try again."
+      );
+      return;
+    }
+
+    // Create the loan object with enhanced details
+    const newLoan = {
+      bankId,
+      bankName: selectedBank.name,
+      originalAmount: numericAmount,
+      remainingAmount: numericAmount,
+      interestRate: numericInterestRate,
+      duration: loanDuration,
+      remainingMonths: loanDuration,
+      emiAmount,
+      totalInterest,
+      totalInterestPaid: 0,
+      schedule,
+      // Pre-closure amount includes 2.5% penalty
+      preCloseAmount: numericAmount * 1.025,
+      startDate: Date.now()
+    };
+
+    // Calculate new balance
+    const newBalance = gameState.balance + numericAmount;
+
+    // Update React state first - for UI updates
+    setActiveLoan(newLoan);
+    setGameState(prev => ({
+      ...prev,
+      balance: newBalance
+    }));
+
+    // Update game engine using the dispatch system instead of direct entity manipulation
+    if (gameEngineRef.current) {
+      gameEngineRef.current.dispatch({
+        type: 'balance-update',
+        balance: newBalance
+      });
+
+      // Also try to directly update the entity if possible
+      if (gameEngineRef.current.entities && gameEngineRef.current.entities.balance) {
+        const Balance = require('./components/Balance').default;
+        gameEngineRef.current.entities.balance.value = newBalance;
+        gameEngineRef.current.entities.balance.renderer = <Balance value={newBalance} />;
+        
+        console.log("Directly updated balance entity to:", newBalance);
+      }
+      
+      gameEngineRef.current.dispatch({
+        type: 'take-loan',
+        bankId,
+        loanOptionIndex,
+        amount: numericAmount,
+        interestRate: numericInterestRate,
+        duration: loanDuration
+      });
+    } else {
+      console.warn('Game engine reference not available, UI state updated but game engine not updated');
+    }
+
+    // Close the finance screen
+    setShowFinance(false);
+    
+    // Log success message
+    console.log(`Loan taken successfully: ${numericAmount} from ${selectedBank.name} at ${numericInterestRate}% for ${loanDuration} months.`);
+    
+    // Show a success message to the user with enhanced details
+    setTimeout(() => {
+      Alert.alert(
+        "Loan Approved",
+        `Your loan of $${numericAmount.toLocaleString()} has been approved!\n\nMonthly Payment: $${emiAmount.toLocaleString()}\nTotal Interest: $${Math.round(totalInterest).toLocaleString()}\nTotal Cost: $${Math.round(numericAmount + totalInterest).toLocaleString()}`
+      );
+    }, 500);
   };
 
-  // Calculate new balance
-  const newBalance = gameState.balance + numericAmount;
-
-  // Update React state first - for UI updates
-  setActiveLoan(newLoan);
-  setGameState(prev => ({
-    ...prev,
-    balance: newBalance
-  }));
-
-  // Update game engine using the dispatch system instead of direct entity manipulation
-
-  if (gameEngineRef.current) {
-    gameEngineRef.current.dispatch({
-      type: 'balance-update',
-      balance: newBalance
-    });
-
-    // Also try to directly update the entity if possible
-    if (gameEngineRef.current.entities && gameEngineRef.current.entities.balance) {
-      const Balance = require('./components/Balance').default;
-      gameEngineRef.current.entities.balance.value = newBalance;
-      gameEngineRef.current.entities.balance.renderer = <Balance value={newBalance} />;
-      
-      console.log("Directly updated balance entity to:", newBalance);
-    }
-    gameEngineRef.current.dispatch({
-      type: 'take-loan',
-      bankId,
-      loanOptionIndex,
-      amount: numericAmount,
-      interestRate: numericInterestRate,
-      duration: loanDuration
-    });
-  } else {
-    console.warn('Game engine reference not available, UI state updated but game engine not updated');
-  }
-
-  // Close the finance screen
-  setShowFinance(false);
-  
-  // Log success message
-  console.log(`Loan taken successfully: ${numericAmount} from ${selectedBank.name} at ${numericInterestRate}% for ${loanDuration} months.`);
-  
-  // Show a success message to the user
-  setTimeout(() => {
-    alert(`Loan of $${numericAmount.toLocaleString()} approved!`);
-  }, 500);
-};
-
-  // Handle pay EMI
+  // Handle pay EMI with improved feedback
   const handlePayEMI = () => {
     if (gameEngine && activeLoan) {
+      // Verify sufficient funds first
+      if (gameState.balance < activeLoan.emiAmount) {
+        Alert.alert(
+          "Insufficient Funds",
+          `You need $${activeLoan.emiAmount.toLocaleString()} to make your EMI payment, but you only have $${gameState.balance.toLocaleString()}.`
+        );
+        return;
+      }
+      
       gameEngine.dispatch({
         type: 'pay-emi'
       });
     }
   };
-
-  // Handle pre-close
-  const handlePreClose = () => {
-    if (gameEngine && activeLoan) {
-      gameEngine.dispatch({
-        type: 'pre-close-loan'
-      });
-      setActiveLoan(null);
+// Handle pre-close with improved details and confirmation
+const handlePreClose = () => {
+  if (gameEngine && activeLoan) {
+    // Calculate pre-closure amount with 2.5% penalty
+    const preClosureAmount = activeLoan.remainingAmount * 1.025;
+    const penaltyAmount = activeLoan.remainingAmount * 0.025;
+    
+    // Verify sufficient funds
+    if (gameState.balance < preClosureAmount) {
+      Alert.alert(
+        "Insufficient Funds",
+        `You need ${Math.round(preClosureAmount).toLocaleString()} to pre-close your loan (includes ${Math.round(penaltyAmount).toLocaleString()} penalty), but you only have ${gameState.balance.toLocaleString()}.`
+      );
+      return;
     }
-  };
+    
+    // Ask for confirmation
+    Alert.alert(
+      "Confirm Pre-Closure",
+      `Are you sure you want to pay off your loan early?\n\nRemaining Principal: ${Math.round(activeLoan.remainingAmount).toLocaleString()}\nPre-Closure Penalty (2.5%): ${Math.round(penaltyAmount).toLocaleString()}\nTotal Payment: ${Math.round(preClosureAmount).toLocaleString()}`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Pay Now",
+          onPress: () => {
+            gameEngine.dispatch({
+              type: 'pre-close-loan'
+            });
+            setActiveLoan(null);
+            
+            // Update loan history after pre-closure
+            if (gameEngineRef.current && gameEngineRef.current.entities && gameEngineRef.current.entities.finance) {
+              setLoanHistory(gameEngineRef.current.entities.finance.loanHistory || []);
+            }
+          }
+        }
+      ]
+    );
+  }
+};
 
   // Property handlers
   const handleBuyLand = (landId) => {
@@ -442,43 +513,7 @@ const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
     }
   };
 
-  useEffect(() => {
-    if (gameEngineRef.current && gameEngineRef.current.entities) {
-      const entities = gameEngineRef.current.entities;
-      
-      // Sync the balance display with the current gameState
-      if (entities.balance && gameState.balance !== entities.balance.value) {
-        // Update both the value and the renderer
-        entities.balance.value = gameState.balance;
-        entities.balance.renderer = <Balance value={gameState.balance} />;
-        
-        // Force a refresh of the game engine
-        if (typeof gameEngineRef.current.setEntities === 'function') {
-          gameEngineRef.current.setEntities({...entities});
-        }
-      }
-    }
-  }, [gameState.balance]);
-
-  // Effect to take initial loan when game starts
-  useEffect(() => {
-    if (gameEngine && gameState.balance === 0 && !activeLoan) {
-      // Automatically take a 100K starter loan
-      const starterBank = availableBanks[0];
-      const starterLoanOption = starterBank.loanOptions[0];
-      
-      gameEngine.dispatch({
-        type: 'take-loan',
-        bankId: starterBank.id,
-        loanOptionIndex: 0,
-        amount: 100000,
-        interestRate: starterLoanOption.baseInterestRate,
-        duration: starterLoanOption.duration
-      });
-    }
-  }, [gameEngine]);
-
-  // Create initial entities for the game
+  // Create initial entities for the game with improved finance system
   const entities = {
     // Background
     background: {
@@ -507,13 +542,14 @@ const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
       autoIncrement: false // Disable auto increment
     },
     
-    // Finance system data
+    // Finance system data with more details
     finance: {
-      banks: availableBanks,
+      banks: initializeBanks(gameState.level),
       activeLoan: null,
       emiDueTimer: 0,
       emiInterval: 30000, // 30 seconds between EMI payments (for testing)
-      loanHistory: []
+      loanHistory: [],
+      creditScore: 750
     },
     
     // Property system data
@@ -621,32 +657,34 @@ const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
       <StatusBar hidden />
       
       <GameEngine
-  ref={gameEngineRef}
-  style={styles.gameContainer}
-  systems={[
-    BalanceUpdateSystem, // Add this as the first system
-    UpdateBalance, 
-    ProcessOffers, 
-    PropertyTimer, 
-    FinanceSystem, 
-    PropertySystem, 
-    PropertyEventHandler,
-    dispatchHandler
-  ]}
-  entities={entities}
-  running={running}
-  onEvent={(e) => {
-    setGameEngine(gameEngineRef.current);
-    onEvent(e);
-  }}
-/>
+        ref={gameEngineRef}
+        style={styles.gameContainer}
+        systems={[
+          BalanceUpdateSystem, // Add this as the first system
+          UpdateBalance, 
+          ProcessOffers, 
+          PropertyTimer, 
+          FinanceSystem, 
+          PropertySystem, 
+          PropertyEventHandler,
+          dispatchHandler
+        ]}
+        entities={entities}
+        running={running}
+        onEvent={(e) => {
+          setGameEngine(gameEngineRef.current);
+          onEvent(e);
+        }}
+      />
       
       {/* Finance Screen Overlay */}
       {showFinance && (
         <BankScreen
-          banks={availableBanks}
+          banks={banks}
           activeLoan={activeLoan}
           playerLevel={gameState.level}
+          creditScore={creditScore}
+          loanHistory={loanHistory}
           onSelectLoan={handleSelectLoan}
           onPayEMI={handlePayEMI}
           onPreClose={handlePreClose}
@@ -657,115 +695,118 @@ const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
       {/* Property Screen Overlay */}
       {showProperties && (
         <View style={{
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#f5f5f5',
-    zIndex: 100,
-  }}>
-    <PropertyScreen
-      gameState={gameState}
-      availableLands={propertyState.availableLands}
-      ownedProperties={propertyState.ownedProperties}
-      onBuyLand={handleBuyLand}
-      onClose={() => setShowProperties(false)}
-    />
-  </View>
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: '#f5f5f5',
+          zIndex: 100,
+        }}>
+          <PropertyScreen
+            gameState={gameState}
+            availableLands={propertyState.availableLands}
+            ownedProperties={propertyState.ownedProperties}
+            onBuyLand={handleBuyLand}
+            onClose={() => setShowProperties(false)}
+          />
+        </View>
       )}
       
       {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
-  <TouchableOpacity 
-    style={[styles.navItem, activeNavItem === 'properties' && styles.activeNavItem]}
-    onPress={() => {
-      setShowProperties(true);
-      setActiveNavItem('properties');
-    }}
-  >
-    <Ionicons 
-      name="home-outline" 
-      size={24} 
-      color={activeNavItem === 'properties' ? "#f0b042" : "#8c8c8c"} 
-    />
-    <Text style={[
-      styles.navText, 
-      activeNavItem === 'properties' && styles.activeNavText
-    ]}>Properties</Text>
-  </TouchableOpacity>
-  
-  <TouchableOpacity 
-    style={[styles.navItem, activeNavItem === 'market' && styles.activeNavItem]}
-    onPress={() => setActiveNavItem('market')}
-  >
-    <FontAwesome5 
-      name="chart-bar" 
-      size={24} 
-      color={activeNavItem === 'market' ? "#f0b042" : "#8c8c8c"} 
-    />
-    <Text style={[
-      styles.navText, 
-      activeNavItem === 'market' && styles.activeNavText
-    ]}>Market</Text>
-  </TouchableOpacity>
-  
-  <TouchableOpacity 
-    style={[styles.navItem, styles.homeButton, activeNavItem === 'home' && styles.activeHomeButton]}
-    onPress={() => {
-      setActiveNavItem('home');
-      // Close any open screens
-      setShowProperties(false);
-      setShowFinance(false);
-    }}
-  >
-    <View style={[
-      styles.homeButtonInner, 
-      activeNavItem === 'home' && styles.activeHomeButtonInner
-    ]}>
-      <Ionicons name="home" size={24} color="white" />
-    </View>
-    <Text style={[styles.navText, {color: 'white'}]}>HOME</Text>
-  </TouchableOpacity>
-  
-  <TouchableOpacity 
-    style={[styles.navItem, activeNavItem === 'finance' && styles.activeNavItem]}
-    onPress={() => {
-      setShowFinance(true);
-      setActiveNavItem('finance');
-    }}
-  >
-    <FontAwesome5 
-      name="university" 
-      size={24} 
-      color={activeNavItem === 'finance' ? "#f0b042" : "#8c8c8c"} 
-    />
-    <Text style={[
-      styles.navText, 
-      activeNavItem === 'finance' && styles.activeNavText
-    ]}>Finance</Text>
-  </TouchableOpacity>
-  
-  <TouchableOpacity 
-    style={[styles.navItem, activeNavItem === 'profile' && styles.activeNavItem]}
-    onPress={() => setActiveNavItem('profile')}
-  >
-    <FontAwesome5 
-      name="user" 
-      size={24} 
-      color={activeNavItem === 'profile' ? "#f0b042" : "#8c8c8c"} 
-    />
-    <Text style={[
-      styles.navText, 
-      activeNavItem === 'profile' && styles.activeNavText
-    ]}>Profile</Text>
-  </TouchableOpacity>
-</View>
+        <TouchableOpacity 
+          style={[styles.navItem, activeNavItem === 'properties' && styles.activeNavItem]}
+          onPress={() => {
+            setShowProperties(true);
+            setActiveNavItem('properties');
+          }}
+        >
+          <Ionicons 
+            name="home-outline" 
+            size={24} 
+            color={activeNavItem === 'properties' ? "#f0b042" : "#8c8c8c"} 
+          />
+          <Text style={[
+            styles.navText, 
+            activeNavItem === 'properties' && styles.activeNavText
+          ]}>Properties</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, activeNavItem === 'market' && styles.activeNavItem]}
+          onPress={() => setActiveNavItem('market')}
+        >
+          <FontAwesome5 
+            name="chart-bar" 
+            size={24} 
+            color={activeNavItem === 'market' ? "#f0b042" : "#8c8c8c"} 
+          />
+          <Text style={[
+            styles.navText, 
+            activeNavItem === 'market' && styles.activeNavText
+          ]}>Market</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, styles.homeButton, activeNavItem === 'home' && styles.activeHomeButton]}
+          onPress={() => {
+            setActiveNavItem('home');
+            // Close any open screens
+            setShowProperties(false);
+            setShowFinance(false);
+          }}
+        >
+          <View style={[
+            styles.homeButtonInner, 
+            activeNavItem === 'home' && styles.activeHomeButtonInner
+          ]}>
+            <Ionicons name="home" size={24} color="white" />
+          </View>
+          <Text style={[styles.navText, {color: 'white'}]}>HOME</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, activeNavItem === 'finance' && styles.activeNavItem]}
+          onPress={() => {
+            setShowFinance(true);
+            setActiveNavItem('finance');
+          }}
+        >
+          <FontAwesome5 
+            name="university" 
+            size={24} 
+            color={activeNavItem === 'finance' ? "#f0b042" : "#8c8c8c"} 
+          />
+          <Text style={[
+            styles.navText, 
+            activeNavItem === 'finance' && styles.activeNavText
+          ]}>Finance</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.navItem, activeNavItem === 'profile' && styles.activeNavItem]}
+          onPress={() => setActiveNavItem('profile')}
+        >
+          <FontAwesome5 
+            name="user" 
+            size={24} 
+            color={activeNavItem === 'profile' ? "#f0b042" : "#8c8c8c"} 
+          />
+          <Text style={[
+            styles.navText, 
+            activeNavItem === 'profile' && styles.activeNavText
+          ]}>Profile</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
+// Keep the original styles
 const styles = StyleSheet.create({
+  // Original styles omitted for brevity
+  // This would keep all the existing styles from the original file
   container: {
     flex: 1,
     backgroundColor: '#334',
