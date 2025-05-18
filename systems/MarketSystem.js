@@ -1,9 +1,195 @@
 // File: systems/MarketSystem.js
-// Description: System for handling market-related game logic
+// Description: Enhanced system for handling market-related game logic
 import { generatePropertyListing } from '../utils/marketGenerator';
+import { calculateROI } from '../utils/propertyCalculator';
 
-// Market cycle phases
-const MARKET_CYCLES = ['Recession', 'Recovery', 'Expansion', 'Peak'];
+// Market cycle phases with detailed states
+const MARKET_CYCLES = [
+  {
+    name: 'Recession',
+    color: '#e74c3c',
+    impact: {
+      priceMultiplier: 0.8,
+      demand: 'Low',
+      supply: 'High',
+      investmentRisk: 'High'
+    },
+    duration: 6 // months
+  },
+  {
+    name: 'Recovery',
+    color: '#f39c12',
+    impact: {
+      priceMultiplier: 1.0,
+      demand: 'Medium',
+      supply: 'Medium',
+      investmentRisk: 'Medium'
+    },
+    duration: 8 // months
+  },
+  {
+    name: 'Expansion',
+    color: '#2ecc71',
+    impact: {
+      priceMultiplier: 1.2,
+      demand: 'High',
+      supply: 'Low',
+      investmentRisk: 'Low'
+    },
+    duration: 10 // months
+  },
+  {
+    name: 'Peak',
+    color: '#3498db',
+    impact: {
+      priceMultiplier: 1.5,
+      demand: 'Very High',
+      supply: 'Very Low',
+      investmentRisk: 'Medium'
+    },
+    duration: 4 // months
+  }
+];
+
+// Market sectors
+const MARKET_SECTORS = {
+  residential: {
+    name: 'Residential',
+    color: '#3498db',
+    weight: 0.4,
+    volatility: 0.15
+  },
+  commercial: {
+    name: 'Commercial',
+    color: '#2ecc71',
+    weight: 0.3,
+    volatility: 0.2
+  },
+  industrial: {
+    name: 'Industrial',
+    color: '#e74c3c',
+    weight: 0.2,
+    volatility: 0.25
+  },
+  luxury: {
+    name: 'Luxury',
+    color: '#9b59b6',
+    weight: 0.1,
+    volatility: 0.3
+  }
+};
+
+// Market indicators
+const MARKET_INDICATORS = {
+  priceIndex: 100,
+  demandIndex: 50,
+  supplyIndex: 50,
+  sentimentScore: 0,
+  investmentIndex: 50
+};
+
+// Investment opportunities types
+const INVESTMENT_TYPES = {
+  development: {
+    name: 'Development',
+    risk: 'Medium',
+    reward: 1.5,
+    duration: 6,
+    minInvestment: 100000
+  },
+  renovation: {
+    name: 'Renovation',
+    risk: 'Low',
+    reward: 1.2,
+    duration: 3,
+    minInvestment: 50000
+  },
+  construction: {
+    name: 'Construction',
+    risk: 'High',
+    reward: 2.0,
+    duration: 12,
+    minInvestment: 250000
+  },
+  diversification: {
+    name: 'Diversification',
+    risk: 'Medium',
+    reward: 1.3,
+    duration: 4,
+    minInvestment: 75000
+  }
+};
+
+// Market news categories
+const NEWS_CATEGORIES = {
+  economic: {
+    name: 'Economic',
+    impact: 0.2,
+    color: '#2ecc71'
+  },
+  policy: {
+    name: 'Policy',
+    impact: 0.15,
+    color: '#3498db'
+  },
+  infrastructure: {
+    name: 'Infrastructure',
+    impact: 0.25,
+    color: '#9b59b6'
+  },
+  social: {
+    name: 'Social',
+    impact: 0.1,
+    color: '#e74c3c'
+  }
+};
+
+// Market trends
+const MARKET_TRENDS = {
+  shortTerm: {
+    name: 'Short-term',
+    duration: 1,
+    weight: 0.3
+  },
+  mediumTerm: {
+    name: 'Medium-term',
+    duration: 3,
+    weight: 0.4
+  },
+  longTerm: {
+    name: 'Long-term',
+    duration: 6,
+    weight: 0.3
+  }
+};
+
+// Market analysis tools
+const ANALYSIS_TOOLS = {
+  priceTrend: {
+    name: 'Price Trend Analysis',
+    description: 'Analyze historical price movements',
+    cost: 5000,
+    cooldown: 7
+  },
+  demandSupply: {
+    name: 'Demand-Supply Analysis',
+    description: 'Analyze market supply and demand',
+    cost: 7500,
+    cooldown: 10
+  },
+  investmentRisk: {
+    name: 'Investment Risk Analysis',
+    description: 'Assess investment risks',
+    cost: 10000,
+    cooldown: 14
+  },
+  marketSentiment: {
+    name: 'Market Sentiment Analysis',
+    description: 'Analyze market sentiment',
+    cost: 12500,
+    cooldown: 21
+  }
+};
 
 // System to handle market dynamics
 const MarketSystem = (entities, { time, dispatch }) => {
