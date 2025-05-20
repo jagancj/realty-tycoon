@@ -8,7 +8,7 @@ import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 
 // Game systems
 import { UpdateBalance, ProcessOffers, PropertyTimer, BalanceUpdateSystem } from './systems';
-import { FinanceSystem, takeLoan, payEMI, preCloseLoan, initializeBanks } from './systems/FinanceSystem';
+import { FinanceSystem, takeLoan, payEMI, preCloseLoan, initializeFinanceState } from './systems/FinanceSystem';
 import { PropertySystem, PropertyEventHandler } from './systems/PropertySystem';
 import { calculateEMI, calculateTotalInterest, generateAmortizationSchedule } from './utils/loanCalculator';
 import { generateRandomLands } from './utils/propertyGenerator';
@@ -49,7 +49,7 @@ export default function App() {
 
   // Get dynamic bank information based on player level
   useEffect(() => {
-    const dynamicBanks = initializeBanks(gameState.level);
+    const dynamicBanks = initializeFinanceState(gameState.level);
     setBanks(dynamicBanks);
   }, [gameState.level]);
 
@@ -135,12 +135,12 @@ export default function App() {
       }));
       
       // Update available banks with the new level
-      const dynamicBanks = initializeBanks(gameState.level + 1);
+      const dynamicBanks = initializeFinanceState(gameState.level + 1);
       setBanks(dynamicBanks);
     } else if (e.type === 'open-finance') {
       setShowFinance(true);
       setActiveLoan(e.currentLoan);
-      setBanks(e.banks || initializeBanks(gameState.level));
+      setBanks(e.banks || initializeFinanceState(gameState.level));
       setCreditScore(e.creditScore || 750);
       
       // Get loan history
@@ -211,161 +211,196 @@ export default function App() {
   };
 
   // Handle loan selection with improved error handling and user feedback
-  const handleSelectLoan = (bankId, loanOptionIndex, amount, interestRate) => {
-    // Input validation
-    if (!bankId || typeof bankId !== 'string') {
-      console.error('Invalid bank ID provided:', bankId);
-      return;
-    }
+  const handleSelectLoan = (bankId, loanTypeId, amount, interestRate, duration, collateralId) => {
+  // Input validation
+  if (!bankId || typeof bankId !== 'string') {
+    console.error('Invalid bank ID provided:', bankId);
+    return;
+  }
 
-    if (loanOptionIndex === undefined || loanOptionIndex < 0) {
-      console.error('Invalid loan option index:', loanOptionIndex);
-      return;
-    }
+  if (!loanTypeId || typeof loanTypeId !== 'string') {
+    console.error('Invalid loan type ID:', loanTypeId);
+    return;
+  }
 
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      console.error('Invalid loan amount:', amount);
-      return;
-    }
+  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    console.error('Invalid loan amount:', amount);
+    return;
+  }
 
-    if (!interestRate || isNaN(Number(interestRate)) || Number(interestRate) < 0) {
-      console.error('Invalid interest rate:', interestRate);
-      return;
-    }
+  if (!interestRate || isNaN(Number(interestRate)) || Number(interestRate) < 0) {
+    console.error('Invalid interest rate:', interestRate);
+    return;
+  }
 
-    // Check if user already has an active loan
-    if (activeLoan) {
-      console.warn('User already has an active loan. Cannot take another loan.');
-      Alert.alert(
-        "Loan Request Denied",
-        "You already have an active loan. Please pay it off before taking a new one."
-      );
-      return;
-    }
+  if (!duration || isNaN(Number(duration)) || Number(duration) <= 0) {
+    console.error('Invalid loan duration:', duration);
+    return;
+  }
 
-    // Find the bank and validate it exists
-    const selectedBank = banks.find(bank => bank.id === bankId);
-    if (!selectedBank) {
-      console.error(`Bank with ID ${bankId} not found`);
-      return;
-    }
+  // Check if user already has an active loan
+  if (activeLoan) {
+    console.warn('User already has an active loan. Cannot take another loan.');
+    Alert.alert(
+      "Loan Request Denied",
+      "You already have an active loan. Please pay it off before taking a new one."
+    );
+    return;
+  }
 
-    // Find the loan option and validate it exists
-    if (!selectedBank.loanOptions || !Array.isArray(selectedBank.loanOptions)) {
-      console.error(`Bank ${bankId} does not have valid loan options`);
-      return;
-    }
-
-    const loanOption = selectedBank.loanOptions[loanOptionIndex];
-    if (!loanOption) {
-      console.error(`Loan option index ${loanOptionIndex} not found for bank ${bankId}`);
-      return;
-    }
-
-    // Validate loan option has required properties
-    if (!loanOption.duration || loanOption.duration <= 0) {
-      console.error('Invalid loan duration:', loanOption.duration);
-      return;
-    }
-
-    // Convert values to appropriate types
-    const numericAmount = Number(amount);
-    const numericInterestRate = Number(interestRate);
-    const loanDuration = Number(loanOption.duration);
-
-    // Calculate EMI and generate amortization schedule
-    let emiAmount, schedule, totalInterest;
-    try {
-      emiAmount = calculateEMI(numericAmount, numericInterestRate, loanDuration);
-      if (isNaN(emiAmount) || emiAmount <= 0) {
-        throw new Error(`Invalid EMI calculated: ${emiAmount}`);
-      }
-      
-      // Generate the full payment schedule
-      schedule = generateAmortizationSchedule(numericAmount, numericInterestRate, loanDuration);
-      
-      // Calculate total interest
-      totalInterest = calculateTotalInterest(numericAmount, emiAmount, loanDuration);
-    } catch (error) {
-      console.error('Error calculating loan details:', error);
-      Alert.alert(
-        "Loan Calculation Error",
-        "There was a problem calculating your loan payments. Please try again."
-      );
-      return;
-    }
-
-    // Create the loan object with enhanced details
-    const newLoan = {
-      bankId,
-      bankName: selectedBank.name,
-      originalAmount: numericAmount,
-      remainingAmount: numericAmount,
-      interestRate: numericInterestRate,
-      duration: loanDuration,
-      remainingMonths: loanDuration,
-      emiAmount,
-      totalInterest,
-      totalInterestPaid: 0,
-      schedule,
-      // Pre-closure amount includes 2.5% penalty
-      preCloseAmount: numericAmount * 1.025,
-      startDate: Date.now()
-    };
-
-    // Calculate new balance
-    const newBalance = gameState.balance + numericAmount;
-
-    // Update React state first - for UI updates
-    setActiveLoan(newLoan);
-    setGameState(prev => ({
-      ...prev,
-      balance: newBalance
-    }));
-
-    // Update game engine using the dispatch system instead of direct entity manipulation
-    if (gameEngineRef.current) {
-      gameEngineRef.current.dispatch({
-        type: 'balance-update',
-        balance: newBalance
-      });
-
-      // Also try to directly update the entity if possible
-      if (gameEngineRef.current.entities && gameEngineRef.current.entities.balance) {
-        const Balance = require('./components/Balance').default;
-        gameEngineRef.current.entities.balance.value = newBalance;
-        gameEngineRef.current.entities.balance.renderer = <Balance value={newBalance} />;
-        
-        console.log("Directly updated balance entity to:", newBalance);
-      }
-      
-      gameEngineRef.current.dispatch({
-        type: 'take-loan',
-        bankId,
-        loanOptionIndex,
-        amount: numericAmount,
-        interestRate: numericInterestRate,
-        duration: loanDuration
-      });
-    } else {
-      console.warn('Game engine reference not available, UI state updated but game engine not updated');
-    }
-
-    // Close the finance screen
-    setShowFinance(false);
+  // Safety check for banks array
+  if (!banks || !Array.isArray(banks)) {
+    console.error('Banks array is undefined or not an array');
     
-    // Log success message
-    console.log(`Loan taken successfully: ${numericAmount} from ${selectedBank.name} at ${numericInterestRate}% for ${loanDuration} months.`);
+    // Use a default bank name since we can't find the actual bank
+    const bankName = bankId === 'venture' ? 'Venture Capital Bank' : 
+                    bankId === 'community' ? 'Community Trust Bank' :
+                    bankId === 'metropolitan' ? 'Metropolitan Financial' :
+                    bankId === 'dynasty' ? 'Global Dynasty Bank' : 'Bank';
     
-    // Show a success message to the user with enhanced details
-    setTimeout(() => {
-      Alert.alert(
-        "Loan Approved",
-        `Your loan of $${numericAmount.toLocaleString()} has been approved!\n\nMonthly Payment: $${emiAmount.toLocaleString()}\nTotal Interest: $${Math.round(totalInterest).toLocaleString()}\nTotal Cost: $${Math.round(numericAmount + totalInterest).toLocaleString()}`
-      );
-    }, 500);
+    // Create loan with the information we have
+    createLoan(bankId, bankName, loanTypeId, amount, interestRate, duration, collateralId);
+    return;
+  }
+
+  // Find the bank
+  const selectedBank = banks.find(bank => bank.id === bankId);
+  if (!selectedBank) {
+    console.error(`Bank with ID ${bankId} not found, using direct parameters`);
+    
+    // Use a default bank name since we can't find the actual bank
+    const bankName = bankId === 'venture' ? 'Venture Capital Bank' : 
+                    bankId === 'community' ? 'Community Trust Bank' :
+                    bankId === 'metropolitan' ? 'Metropolitan Financial' :
+                    bankId === 'dynasty' ? 'Global Dynasty Bank' : 'Bank';
+    
+    // Create loan with the information we have
+    createLoan(bankId, bankName, loanTypeId, amount, interestRate, duration, collateralId);
+    return;
+  }
+
+  // Find the loan type
+  const loanType = selectedBank.loanTypes.find(loan => loan.id === loanTypeId);
+  if (!loanType) {
+    console.error(`Loan type ID ${loanTypeId} not found for bank ${bankId}, using direct parameters`);
+    
+    // Create loan with the information we have
+    createLoan(bankId, selectedBank.name, loanTypeId, amount, interestRate, duration, collateralId);
+    return;
+  }
+
+  // Create loan using bank and loan type information
+  createLoan(
+    bankId, 
+    selectedBank.name, 
+    loanTypeId, 
+    amount, 
+    interestRate, 
+    duration, 
+    collateralId, 
+    loanType.name, 
+    loanType.category
+  );
+};
+
+// Helper function to create the loan
+const createLoan = (
+  bankId, 
+  bankName, 
+  loanTypeId, 
+  amount, 
+  interestRate, 
+  duration, 
+  collateralId, 
+  loanTypeName = 'Loan', 
+  category = 'general'
+) => {
+  // Convert values to appropriate types
+  const numericAmount = Number(amount);
+  const numericInterestRate = Number(interestRate);
+  const loanDuration = Number(duration);
+
+  // Calculate EMI and generate amortization schedule
+  let emiAmount, totalInterest;
+  try {
+    emiAmount = calculateEMI(numericAmount, numericInterestRate, loanDuration);
+    if (isNaN(emiAmount) || emiAmount <= 0) {
+      throw new Error(`Invalid EMI calculated: ${emiAmount}`);
+    }
+    
+    // Calculate total interest
+    totalInterest = calculateTotalInterest(numericAmount, emiAmount, loanDuration);
+  } catch (error) {
+    console.error('Error calculating loan details:', error);
+    Alert.alert(
+      "Loan Calculation Error",
+      "There was a problem calculating your loan payments. Please try again."
+    );
+    return;
+  }
+
+  // Create the loan object with enhanced details
+  const newLoan = {
+    bankId,
+    bankName,
+    loanTypeId,
+    loanTypeName,
+    originalAmount: numericAmount,
+    remainingAmount: numericAmount,
+    interestRate: numericInterestRate,
+    duration: loanDuration,
+    remainingMonths: loanDuration,
+    emiAmount,
+    totalInterest,
+    totalInterestPaid: 0,
+    // Pre-closure amount includes 2.5% penalty
+    preCloseAmount: numericAmount * 1.025,
+    startDate: Date.now(),
+    collateralId,
+    category
   };
 
+  // Calculate new balance
+  const newBalance = gameState.balance + numericAmount;
+
+  // Update React state first - for UI updates
+  setActiveLoan(newLoan);
+  setGameState(prev => ({
+    ...prev,
+    balance: newBalance
+  }));
+
+  // Update game engine
+  if (gameEngineRef.current) {
+    gameEngineRef.current.dispatch({
+      type: 'take-loan',
+      bankId,
+      loanTypeId,
+      amount: numericAmount,
+      interestRate: numericInterestRate,
+      duration: loanDuration,
+      collateralId
+    });
+    
+    // Also try to directly update the entity if possible
+    if (gameEngineRef.current.entities && gameEngineRef.current.entities.balance) {
+      const Balance = require('./components/Balance').default;
+      gameEngineRef.current.entities.balance.value = newBalance;
+      gameEngineRef.current.entities.balance.renderer = <Balance value={newBalance} />;
+    }
+  }
+
+  // Close the finance screen
+  setShowFinance(false);
+  
+  // Show a success message to the user
+  setTimeout(() => {
+    Alert.alert(
+      "Loan Approved",
+      `Your loan of $${numericAmount.toLocaleString()} has been approved!\n\nMonthly Payment: $${Math.round(emiAmount).toLocaleString()}\nTotal Interest: $${Math.round(totalInterest).toLocaleString()}\nTotal Cost: $${Math.round(numericAmount + totalInterest).toLocaleString()}`
+    );
+  }, 500);
+};
   // Handle pay EMI with improved feedback
   const handlePayEMI = () => {
     if (gameEngine && activeLoan) {
@@ -544,12 +579,26 @@ const handlePreClose = () => {
     
     // Finance system data with more details
     finance: {
-      banks: initializeBanks(gameState.level),
-      activeLoan: null,
-      emiDueTimer: 0,
-      emiInterval: 30000, // 30 seconds between EMI payments (for testing)
-      loanHistory: [],
-      creditScore: 750
+unlockedBanks: ['venture'],
+  unlockedLoanTypes: ['seed'],
+  activeLoan: null,
+  emiDueTimer: 0,
+  emiInterval: 30000,
+  loanHistory: [],
+  creditScore: 750,
+  bankRelationships: {
+    venture: {
+      score: 50,
+      paymentsMade: 0,
+      paymentsMissed: 0,
+      loansCompleted: 0,
+      firstUnlocked: Date.now()
+    }
+  },
+  lastCheckedLevel: gameState.level,
+  lastPropertyCount: 0,
+  marketCondition: 'normal',
+  marketMultiplier: 1.0
     },
     
     // Property system data
@@ -680,7 +729,31 @@ const handlePreClose = () => {
       {/* Finance Screen Overlay */}
       {showFinance && (
         <BankScreen
-          banks={banks}
+          banks={banks.length > 0 ? banks : [
+      {
+        id: 'venture',
+        name: 'Venture Capital Bank',
+        description: 'Your first step into real estate starts here!',
+        unlockLevel: 1,
+        rating: 3,
+        icon: 'rocket',
+        color: '#4CAF50',
+        loanTypes: [{
+          id: 'seed',
+          name: 'Seed Funding Loan',
+          category: 'starter',
+          description: 'Get started with your real estate empire',
+          minLevel: 1,
+          minAmount: 50000,
+          maxAmount: 300000 * gameState.level,
+          baseInterestRate: 15,
+          minDuration: 12,
+          maxDuration: 24,
+          requiresCollateral: false,
+          relationshipDiscount: 0.01
+        }]
+      }
+    ]}
           activeLoan={activeLoan}
           playerLevel={gameState.level}
           creditScore={creditScore}

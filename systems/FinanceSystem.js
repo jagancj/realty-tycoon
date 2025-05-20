@@ -660,5 +660,5 @@ export {
   payEMI, 
   preCloseLoan, 
   getAvailableBanks, 
-  initializeFinanceState
+  initializeFinanceState,
 };
