@@ -211,7 +211,8 @@ export default function App() {
   };
 
   // Handle loan selection with improved error handling and user feedback
-  const handleSelectLoan = (bankId, loanTypeId, amount, interestRate, duration, collateralId) => {
+// Handle loan selection with improved error handling and user feedback
+const handleSelectLoan = (bankId, loanTypeId, amount, interestRate, duration, collateralId) => {
   // Input validation
   if (!bankId || typeof bankId !== 'string') {
     console.error('Invalid bank ID provided:', bankId);
@@ -248,58 +249,44 @@ export default function App() {
     return;
   }
 
+  // Initialize the bank info
+  let bankName = '';
+  let loanTypeName = 'Loan';
+  let category = 'general';
+  
   // Safety check for banks array
-  if (!banks || !Array.isArray(banks)) {
-    console.error('Banks array is undefined or not an array');
-    
+  if (banks && Array.isArray(banks) && banks.length > 0) {
+    // Find the bank
+    const selectedBank = banks.find(bank => bank.id === bankId);
+    if (selectedBank) {
+      bankName = selectedBank.name;
+      
+      // Find the loan type
+      const loanType = selectedBank.loanTypes.find(loan => loan.id === loanTypeId);
+      if (loanType) {
+        loanTypeName = loanType.name;
+        category = loanType.category || 'general';
+      }
+    }
+  } else {
     // Use a default bank name since we can't find the actual bank
-    const bankName = bankId === 'venture' ? 'Venture Capital Bank' : 
-                    bankId === 'community' ? 'Community Trust Bank' :
-                    bankId === 'metropolitan' ? 'Metropolitan Financial' :
-                    bankId === 'dynasty' ? 'Global Dynasty Bank' : 'Bank';
-    
-    // Create loan with the information we have
-    createLoan(bankId, bankName, loanTypeId, amount, interestRate, duration, collateralId);
-    return;
+    bankName = bankId === 'venture' ? 'Venture Capital Bank' : 
+              bankId === 'community' ? 'Community Trust Bank' :
+              bankId === 'metropolitan' ? 'Metropolitan Financial' :
+              bankId === 'dynasty' ? 'Global Dynasty Bank' : 'Bank';
   }
-
-  // Find the bank
-  const selectedBank = banks.find(bank => bank.id === bankId);
-  if (!selectedBank) {
-    console.error(`Bank with ID ${bankId} not found, using direct parameters`);
-    
-    // Use a default bank name since we can't find the actual bank
-    const bankName = bankId === 'venture' ? 'Venture Capital Bank' : 
-                    bankId === 'community' ? 'Community Trust Bank' :
-                    bankId === 'metropolitan' ? 'Metropolitan Financial' :
-                    bankId === 'dynasty' ? 'Global Dynasty Bank' : 'Bank';
-    
-    // Create loan with the information we have
-    createLoan(bankId, bankName, loanTypeId, amount, interestRate, duration, collateralId);
-    return;
-  }
-
-  // Find the loan type
-  const loanType = selectedBank.loanTypes.find(loan => loan.id === loanTypeId);
-  if (!loanType) {
-    console.error(`Loan type ID ${loanTypeId} not found for bank ${bankId}, using direct parameters`);
-    
-    // Create loan with the information we have
-    createLoan(bankId, selectedBank.name, loanTypeId, amount, interestRate, duration, collateralId);
-    return;
-  }
-
+  
   // Create loan using bank and loan type information
   createLoan(
     bankId, 
-    selectedBank.name, 
+    bankName, 
     loanTypeId, 
     amount, 
     interestRate, 
     duration, 
     collateralId, 
-    loanType.name, 
-    loanType.category
+    loanTypeName, 
+    category
   );
 };
 

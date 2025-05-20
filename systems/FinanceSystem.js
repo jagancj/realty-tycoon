@@ -200,7 +200,7 @@ const FinanceSystem = (entities, { touches, time, dispatch }) => {
   
   if (touchedFinance) {
     // Get available banks based on unlocked status
-    const availableBanks = getAvailableBanks(finance.unlockedBanks, gameState.level, finance.bankRelationships);
+    const availableBanks = getAvailableBanks(finance, gameState.level );
     
     dispatch({
       type: 'open-finance',
@@ -222,7 +222,7 @@ const takeLoan = (entities, loanDetails) => {
   const { bankId, loanTypeId, amount, interestRate, duration, purpose, collateralId } = loanDetails;
   
   // Find the selected bank
-  const availableBanks = getAvailableBanks(finance.unlockedBanks, gameState.level, finance.bankRelationships);
+  const availableBanks = getAvailableBanks(finance, gameState.level);
   const selectedBank = availableBanks.find(bank => bank.id === bankId);
   
   if (!selectedBank) return entities;
@@ -403,7 +403,7 @@ const preCloseLoan = (entities) => {
 };
 
 // Get list of available banks based on player's level and unlocked banks
-const getAvailableBanks = (unlockedBanks, playerLevel, bankRelationships) => {
+const getAvailableBanks = (finance, playerLevel) => {
   // Bank definitions based on player progression
   const allBanks = [
     // Level 1: Starter Bank
@@ -555,7 +555,7 @@ const getAvailableBanks = (unlockedBanks, playerLevel, bankRelationships) => {
   ];
   
   // For unlocked development loan
-  if (unlockedBanks.includes('venture') && unlockedLoanTypes.includes('development')) {
+  if (finance?.unlockedBanks?.includes('venture') && finance?.unlockedLoanTypes?.includes('development')) {
     // Find venture bank and add development loan
     const ventureBank = allBanks.find(bank => bank.id === 'venture');
     if (ventureBank && !ventureBank.loanTypes.some(loan => loan.id === 'development')) {
@@ -579,14 +579,14 @@ const getAvailableBanks = (unlockedBanks, playerLevel, bankRelationships) => {
   // Filter banks based on player level and unlocked status
   const availableBanks = allBanks.filter(bank => {
     // Bank must be unlocked
-    if (!unlockedBanks.includes(bank.id)) return false;
+    if (!finance?.unlockedBanks.includes(bank.id)) return false;
     
     // Player level must be sufficient
     if (playerLevel < bank.unlockLevel) return false;
     
     // Check relationship requirements
-    if (bankRelationships && bankRelationships[bank.id]) {
-      if (bankRelationships[bank.id].score < bank.minRelationship) {
+    if (finance?.bankRelationships && finance?.bankRelationships[bank.id]) {
+      if (finance.bankRelationships[bank.id].score < bank.minRelationship) {
         return false;
       }
     }
